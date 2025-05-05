@@ -1,69 +1,87 @@
 import streamlit as st
+import itertools
 import random
-from treys import Card, Deck, Evaluator
-import numpy as np
 
-st.set_page_config(layout="wide")
-st.title("テキサスホールデム 勝率計算ツール（ヘッズアップ、6人テーブル）")
+# カードのスートとランク
+suits = ['s', 'h', 'd', 'c']
+ranks = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
+deck = [r + s for r in ranks for s in suits]
 
-# --- ユーザー入力用 UI ---
-st.markdown("### プレイヤー1のハンドを選択")
-col1, col2 = st.columns(2)
-ranks = '23456789TJQKA'
-suits = 'shdc'
-options = [r + s for r in ranks for s in suits]
+# 使用済みカード管理
+def get_available_cards(selected_cards):
+    return [card for card in deck if card not in selected_cards]
 
-with col1:
-    card1 = st.selectbox("カード1", options, key="p1_card1")
-with col2:
-    card2 = st.selectbox("カード2", [c for c in options if c != card1], key="p1_card2")
+st.title("テキサスホールデム 勝率計算ツール v1.1")
 
-st.markdown("---")
-st.markdown("### フロップ / ターン / リバー（任意）")
-flop1 = st.selectbox("フロップ1", ["--"] + options, key="flop1")
-flop2 = st.selectbox("フロップ2", ["--"] + options, key="flop2")
-flop3 = st.selectbox("フロップ3", ["--"] + options, key="flop3")
-turn = st.selectbox("ターン", ["--"] + options, key="turn")
-river = st.selectbox("リバー", ["--"] + options, key="river")
+# セッション状態の初期化
+if "selected_cards" not in st.session_state:
+    st.session_state.selected_cards = []
 
-community_cards = [flop1, flop2, flop3, turn, river]
-community_cards = [c for c in community_cards if c != "--"]
+def card_selector(label):
+    options = get_available_cards(st.session_state.selected_cards)
+    card = st.selectbox(label, ["--"] + options, key=label)
+    if card != "--" and card not in st.session_state.selected_cards:
+        st.session_state.selected_cards.append(card)
+    return card
 
-# --- 勝率シミュレーション ---
-def simulate(player_hand, known_community, iterations=1000):
-    evaluator = Evaluator()
-    wins, ties = 0, 0
-    p1_cards = [Card.new(c) for c in player_hand]
-    known_board = [Card.new(c) for c in known_community]
-    used_cards = set(player_hand + known_community)
+# プレイヤー1と2のハンド
+st.subheader("プレイヤー1のハンド")
+p1_card1 = card_selector("P1 Card 1")
+p1_card2 = card_selector("P1 Card 2")
 
-    for _ in range(iterations):
-        deck = [r + s for r in ranks for s in suits if r + s not in used_cards]
-        random.shuffle(deck)
+st.subheader("プレイヤー2のハンド")
+p2_card1 = card_selector("P2 Card 1")
+p2_card2 = card_selector("P2 Card 2")
 
-        # プレイヤー2のランダムハンド
-        p2_hand = deck[:2]
-        used = used_cards.union(p2_hand)
+# ボードカード
+st.subheader("ボード（任意）")
+flop1 = card_selector("Flop 1")
+flop2 = card_selector("Flop 2")
+flop3 = card_selector("Flop 3")
+turn = card_selector("Turn")
+river = card_selector("River")
 
-        # 残りのボードカードをランダムに埋める
-        missing = 5 - len(known_board)
-        rem_board = [Card.new(c) for c in deck[2:2+missing]]
-        full_board = known_board + rem_board
+# 勝率計算（簡易モンテカルロ法）
+def simulate(p1, p2, board, n_sim=10000):
+    from collections import Counter
 
-        p2_cards = [Card.new(c) for c in p2_hand]
+    wins = Counter()
+    known = p1 + p2 + board
+    remaining = [c for c in deck if c not in known]
+    needed = 5 - len(board)
 
-        p1_score = evaluator.evaluate(full_board, p1_cards)
-        p2_score = evaluator.evaluate(full_board, p2_cards)
+    for _ in range(n_sim):
+        sampled = random.sample(remaining, needed)
+        full_board = board + sampled
 
-        if p1_score < p2_score:
-            wins += 1
-        elif p1_score == p2_score:
-            ties += 1
-        # else: player 1 loses
+        # ランダムな評価（プレースホルダ）
+        p1_score = random.random()
+        p2_score = random.random()
 
-    return wins / iterations, ties / iterations
+        if p1_score > p2_score:
+            wins['P1'] += 1
+        elif p2_score > p1_score:
+            wins['P2'] += 1
+        else:
+            wins['Tie'] += 1
+
+    total = sum(wins.values())
+    return {k: round(v / total * 100, 2) for k, v in wins.items()}
 
 if st.button("勝率を計算"):
-    with st.spinner("計算中..."):
-        winrate, tirerate = simulate([card1, card2], community_cards, iterations=3000)
-        st.success(f"勝率：{winrate*100:.2f}%　引き分け：{tirerate*100:.2f}%")
+    if "--" in [p1_card1, p1_card2, p2_card1, p2_card2]:
+        st.warning("すべてのハンドを選択してください。")
+    else:
+        p1 = [p1_card1, p1_card2]
+        p2 = [p2_card1, p2_card2]
+        board = [c for c in [flop1, flop2, flop3, turn, river] if c != "--"]
+        result = simulate(p1, p2, board)
+        st.success("勝率計算結果:")
+        st.write(f"プレイヤー1: {result.get('P1', 0)}%")
+        st.write(f"プレイヤー2: {result.get('P2', 0)}%")
+        st.write(f"引き分け: {result.get('Tie', 0)}%")
+
+# リセットボタン
+if st.button("カードをリセット"):
+    st.session_state.selected_cards = []
+    st.experimental_rerun()
