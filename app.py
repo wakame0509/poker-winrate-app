@@ -1,69 +1,102 @@
 import streamlit as st
 import random
-from treys import Card, Deck, Evaluator
 import numpy as np
+from collections import Counter
+from itertools import combinations
 
-st.set_page_config(layout="wide")
-st.title("テキサスホールデム 勝率計算ツール（ヘッズアップ、6人テーブル）")
+# カードの定義
+suits = ['s', 'h', 'd', 'c']
+ranks = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
+deck = [r + s for r in ranks for s in suits]
 
-# --- ユーザー入力用 UI ---
-st.markdown("### プレイヤー1のハンドを選択")
-col1, col2 = st.columns(2)
-ranks = '23456789TJQKA'
-suits = 'shdc'
-options = [r + s for r in ranks for s in suits]
-
-with col1:
-    card1 = st.selectbox("カード1", options, key="p1_card1")
-with col2:
-    card2 = st.selectbox("カード2", [c for c in options if c != card1], key="p1_card2")
-
-st.markdown("---")
-st.markdown("### フロップ / ターン / リバー（任意）")
-flop1 = st.selectbox("フロップ1", ["--"] + options, key="flop1")
-flop2 = st.selectbox("フロップ2", ["--"] + options, key="flop2")
-flop3 = st.selectbox("フロップ3", ["--"] + options, key="flop3")
-turn = st.selectbox("ターン", ["--"] + options, key="turn")
-river = st.selectbox("リバー", ["--"] + options, key="river")
-
-community_cards = [flop1, flop2, flop3, turn, river]
-community_cards = [c for c in community_cards if c != "--"]
-
-# --- 勝率シミュレーション ---
-def simulate(player_hand, known_community, iterations=1000):
-    evaluator = Evaluator()
-    wins, ties = 0, 0
-    p1_cards = [Card.new(c) for c in player_hand]
-    known_board = [Card.new(c) for c in known_community]
-    used_cards = set(player_hand + known_community)
+# 勝率計算関数（モンテカルロ法）
+def estimate_win_rate_monte_carlo(player_hand, community_cards, opp_range, iterations=10000):
+    wins = 0
+    ties = 0
+    losses = 0
 
     for _ in range(iterations):
-        deck = [r + s for r in ranks for s in suits if r + s not in used_cards]
-        random.shuffle(deck)
+        used_cards = set(player_hand + community_cards)
+        deck_remaining = [card for card in deck if card not in used_cards]
 
-        # プレイヤー2のランダムハンド
-        p2_hand = deck[:2]
-        used = used_cards.union(p2_hand)
+        opp_hand = random.choice(opp_range)
+        if any(card in used_cards for card in opp_hand):
+            continue
+        used_cards.update(opp_hand)
 
-        # 残りのボードカードをランダムに埋める
-        missing = 5 - len(known_board)
-        rem_board = [Card.new(c) for c in deck[2:2+missing]]
-        full_board = known_board + rem_board
+        total_community = community_cards.copy()
+        while len(total_community) < 5:
+            card = random.choice(deck_remaining)
+            if card not in used_cards:
+                total_community.append(card)
+                used_cards.add(card)
 
-        p2_cards = [Card.new(c) for c in p2_hand]
+        player_best = get_best_hand(player_hand + total_community)
+        opp_best = get_best_hand(opp_hand + total_community)
 
-        p1_score = evaluator.evaluate(full_board, p1_cards)
-        p2_score = evaluator.evaluate(full_board, p2_cards)
-
-        if p1_score < p2_score:
+        if player_best > opp_best:
             wins += 1
-        elif p1_score == p2_score:
+        elif player_best == opp_best:
             ties += 1
-        # else: player 1 loses
+        else:
+            losses += 1
 
-    return wins / iterations, ties / iterations
+    total = wins + ties + losses
+    return round(wins / total * 100, 2), round(ties / total * 100, 2), round(losses / total * 100, 2)
 
-if st.button("勝率を計算"):
-    with st.spinner("計算中..."):
-        winrate, tirerate = simulate([card1, card2], community_cards, iterations=3000)
-        st.success(f"勝率：{winrate*100:.2f}%　引き分け：{tirerate*100:.2f}%")
+# 役の強さ評価（簡易版）
+def get_best_hand(cards):
+    values = sorted([ranks.index(card[0]) for card in cards], reverse=True)
+    return values[:5]
+
+# UI部分
+st.title("テキサスホールデム 勝率計算ツール v1.2前半")
+
+# プレイヤーの手札選択
+st.subheader("プレイヤーの手札")
+available_cards = deck.copy()
+player_cards = []
+
+col1, col2 = st.columns(2)
+with col1:
+    card1 = st.selectbox("カード1", [""] + available_cards, key="p1")
+    if card1 and card1 != "":
+        player_cards.append(card1)
+        available_cards.remove(card1)
+with col2:
+    card2 = st.selectbox("カード2", [""] + available_cards, key="p2")
+    if card2 and card2 != "":
+        player_cards.append(card2)
+        if card2 in available_cards:
+            available_cards.remove(card2)
+
+# コミュニティカード選択
+st.subheader("コミュニティカード")
+community_cards = []
+for i in range(5):
+    card = st.selectbox(f"カード {i+1}", [""] + available_cards, key=f"comm{i}")
+    if card and card != "":
+        community_cards.append(card)
+        if card in available_cards:
+            available_cards.remove(card)
+
+# 相手のハンドレンジ指定（簡易：ランダムまたは固定数種）
+st.subheader("相手のハンドレンジ選択")
+opp_range_option = st.radio("レンジタイプを選択", ["ランダム", "強いハンドのみ"])
+
+def generate_opponent_range(option):
+    possible = [list(h) for h in combinations(deck, 2) if h[0] != h[1]]
+    if option == "強いハンドのみ":
+        filtered = [h for h in possible if h[0][0] == h[1][0] or h[0][1] == h[1][1]]
+        return random.sample(filtered, min(len(filtered), 50))
+    else:
+        return random.sample(possible, min(len(possible), 300))
+
+# 勝率計算実行
+if len(player_cards) == 2:
+    if st.button("勝率を計算する"):
+        opp_range = generate_opponent_range(opp_range_option)
+        win, tie, lose = estimate_win_rate_monte_carlo(player_cards, community_cards, opp_range, iterations=10000)
+        st.markdown(f"### 勝率: {win}% / 引き分け: {tie}% / 敗北: {lose}%")
+else:
+    st.info("プレイヤーの2枚のカードを選んでください。")
