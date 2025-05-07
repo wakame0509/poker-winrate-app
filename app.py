@@ -1,102 +1,94 @@
 import streamlit as st
 import random
-import numpy as np
+import itertools
 from collections import Counter
-from itertools import combinations
 
-# カードの定義
-suits = ['s', 'h', 'd', 'c']
-ranks = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
-deck = [r + s for r in ranks for s in suits]
+RANKS = '23456789TJQKA'
+SUITS = 'cdhs'
+DECK = [r + s for r in RANKS for s in SUITS]
 
-# 勝率計算関数（モンテカルロ法）
-def estimate_win_rate_monte_carlo(player_hand, community_cards, opp_range, iterations=10000):
+def evaluate_hand(hand):
+    ranks = ' --23456789TJQKA'
+    values = sorted([ranks.index(c[0]) for c in hand], reverse=True)
+    counts = Counter([c[0] for c in hand])
+    suits = [c[1] for c in hand]
+    flush = len(set(suits)) == 1
+    straight = all(values[i] - 1 == values[i + 1] for i in range(4))
+    if straight and flush:
+        return (8, values[0])  # Straight flush
+    if 4 in counts.values():
+        return (7, counts.most_common(1)[0][0])  # Four of a kind
+    if sorted(counts.values()) == [2, 3]:
+        return (6, counts.most_common(1)[0][0])  # Full house
+    if flush:
+        return (5, values)  # Flush
+    if straight:
+        return (4, values[0])  # Straight
+    if 3 in counts.values():
+        return (3, counts.most_common(1)[0][0])  # Three of a kind
+    if list(counts.values()).count(2) == 2:
+        return (2, counts.most_common(2))  # Two pair
+    if 2 in counts.values():
+        return (1, counts.most_common(1)[0][0])  # One pair
+    return (0, values)  # High card
+
+def calculate_win_rate(player_hand, community_cards, iterations=1000):
     wins = 0
     ties = 0
     losses = 0
 
+    used_cards = set(player_hand + community_cards)
+    remaining_deck = [c for c in DECK if c not in used_cards]
+
     for _ in range(iterations):
-        used_cards = set(player_hand + community_cards)
-        deck_remaining = [card for card in deck if card not in used_cards]
+        deck_copy = remaining_deck[:]
+        random.shuffle(deck_copy)
 
-        opp_hand = random.choice(opp_range)
-        if any(card in used_cards for card in opp_hand):
-            continue
-        used_cards.update(opp_hand)
+        opp_hand = deck_copy[:2]
+        num_needed = 5 - len(community_cards)
+        board = community_cards + deck_copy[2:2 + num_needed]
 
-        total_community = community_cards.copy()
-        while len(total_community) < 5:
-            card = random.choice(deck_remaining)
-            if card not in used_cards:
-                total_community.append(card)
-                used_cards.add(card)
-
-        player_best = get_best_hand(player_hand + total_community)
-        opp_best = get_best_hand(opp_hand + total_community)
+        player_best = evaluate_hand(player_hand + board)
+        opp_best = evaluate_hand(opp_hand + board)
 
         if player_best > opp_best:
             wins += 1
-        elif player_best == opp_best:
-            ties += 1
-        else:
+        elif player_best < opp_best:
             losses += 1
+        else:
+            ties += 1
 
-    total = wins + ties + losses
-    return round(wins / total * 100, 2), round(ties / total * 100, 2), round(losses / total * 100, 2)
+    total = wins + losses + ties
+    return wins / total * 100, ties / total * 100, losses / total * 100
 
-# 役の強さ評価（簡易版）
-def get_best_hand(cards):
-    values = sorted([ranks.index(card[0]) for card in cards], reverse=True)
-    return values[:5]
+st.title("テキサスホールデム 勝率計算 (v1.0相当)")
 
-# UI部分
-st.title("テキサスホールデム 勝率計算ツール v1.2前半")
+selected_cards = []
 
-# プレイヤーの手札選択
-st.subheader("プレイヤーの手札")
-available_cards = deck.copy()
-player_cards = []
+st.subheader("プレイヤー1の手札を選んでください")
+cols = st.columns(2)
+player_hand = []
+for i in range(2):
+    with cols[i]:
+        card = st.selectbox(f"カード {i + 1}", [''] + DECK, key=f"p1_card_{i}")
+        if card and card not in selected_cards:
+            player_hand.append(card)
+            selected_cards.append(card)
 
-col1, col2 = st.columns(2)
-with col1:
-    card1 = st.selectbox("カード1", [""] + available_cards, key="p1")
-    if card1 and card1 != "":
-        player_cards.append(card1)
-        available_cards.remove(card1)
-with col2:
-    card2 = st.selectbox("カード2", [""] + available_cards, key="p2")
-    if card2 and card2 != "":
-        player_cards.append(card2)
-        if card2 in available_cards:
-            available_cards.remove(card2)
-
-# コミュニティカード選択
-st.subheader("コミュニティカード")
+st.subheader("コミュニティカード（任意）")
 community_cards = []
+cols = st.columns(5)
 for i in range(5):
-    card = st.selectbox(f"カード {i+1}", [""] + available_cards, key=f"comm{i}")
-    if card and card != "":
-        community_cards.append(card)
-        if card in available_cards:
-            available_cards.remove(card)
+    with cols[i]:
+        card = st.selectbox(f"ボード {i + 1}", [''] + DECK, key=f"board_{i}")
+        if card and card not in selected_cards:
+            community_cards.append(card)
+            selected_cards.append(card)
 
-# 相手のハンドレンジ指定（簡易：ランダムまたは固定数種）
-st.subheader("相手のハンドレンジ選択")
-opp_range_option = st.radio("レンジタイプを選択", ["ランダム", "強いハンドのみ"])
-
-def generate_opponent_range(option):
-    possible = [list(h) for h in combinations(deck, 2) if h[0] != h[1]]
-    if option == "強いハンドのみ":
-        filtered = [h for h in possible if h[0][0] == h[1][0] or h[0][1] == h[1][1]]
-        return random.sample(filtered, min(len(filtered), 50))
-    else:
-        return random.sample(possible, min(len(possible), 300))
-
-# 勝率計算実行
-if len(player_cards) == 2:
-    if st.button("勝率を計算する"):
-        opp_range = generate_opponent_range(opp_range_option)
-        win, tie, lose = estimate_win_rate_monte_carlo(player_cards, community_cards, opp_range, iterations=10000)
-        st.markdown(f"### 勝率: {win}% / 引き分け: {tie}% / 敗北: {lose}%")
+if len(player_hand) == 2:
+    if st.button("勝率を計算"):
+        with st.spinner("計算中..."):
+            win, tie, loss = calculate_win_rate(player_hand, community_cards, iterations=10000)
+        st.success(f"勝率: {win:.2f}% / 引き分け: {tie:.2f}% / 敗北: {loss:.2f}%")
 else:
-    st.info("プレイヤーの2枚のカードを選んでください。")
+    st.info("まずプレイヤー1の手札を2枚選んでください。")
