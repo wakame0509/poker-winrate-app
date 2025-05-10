@@ -1,4 +1,4 @@
 streamlit
 treys
 numpy
-eva17
+eval7
