@@ -1,72 +1,46 @@
 import streamlit as st
-from PIL import Image
-import os
-import random
-
-from calculate_winrate import calculate_winrate_montecarlo, calculate_winrate_enumeration
+from calculate_winrate import run_monte_carlo_simulation
 from hand_range_matrix import display_hand_range_selector
-from utils import get_card_image_path, get_deck, remove_selected_cards_from_deck, parse_range_to_hands
+from utils import parse_card_input, generate_deck, remove_known_cards
 
-# --- UI設定 ---
 st.set_page_config(page_title="テキサスホールデム勝率計算ツール", layout="wide")
+
 st.title("テキサスホールデム勝率計算ツール")
 
-# --- 定数と初期化 ---
-suits = ['s', 'h', 'd', 'c']
-ranks = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
-deck = get_deck()
+st.sidebar.header("設定")
 
-# --- セッション状態初期化 ---
-if "selected_cards" not in st.session_state:
-    st.session_state.selected_cards = []
+simulations = st.sidebar.selectbox(
+    "モンテカルロ法の試行回数",
+    options=[100000, 200000, 300000, 400000, 500000, 600000, 700000, 800000, 900000, 1000000],
+    index=0
+)
 
-# --- カード選択UI ---
-def card_selector(label, key_prefix):
-    selected = []
-    cols = st.columns(2)
-    for i in range(2):
-        with cols[i]:
-            rank = st.selectbox(f"{label} Rank {i+1}", ranks, key=f"{key_prefix}_rank_{i}")
-            suit = st.selectbox(f"{label} Suit {i+1}", suits, key=f"{key_prefix}_suit_{i}")
-            card = rank + suit
-            selected.append(card)
-    return selected
+st.subheader("プレイヤーのハンド")
+col1, col2 = st.columns(2)
+with col1:
+    player1_hand = st.text_input("プレイヤー1", value="As Kh")
+with col2:
+    player2_hand = st.text_input("プレイヤー2（未指定でランダム）", value="")
 
-# --- 自分のハンド選択 ---
-st.subheader("自分のハンド")
-player_hand = card_selector("プレイヤー", "player")
+st.subheader("ボード")
+board_input = st.text_input("フロップ・ターン・リバー", value="")
 
-# --- ハンドレンジ選択 ---
-st.subheader("相手のハンドレンジ")
+st.subheader("相手のハンドレンジを指定（任意）")
 selected_range = display_hand_range_selector()
 
-# --- ボード選択 ---
-st.subheader("ボードカード（任意）")
-board_cards = []
-cols = st.columns(5)
-for i in range(5):
-    with cols[i]:
-        rank = st.selectbox(f"Board Rank {i+1}", [""] + ranks, key=f"board_rank_{i}")
-        suit = st.selectbox(f"Board Suit {i+1}", [""] + suits, key=f"board_suit_{i}")
-        if rank and suit:
-            board_cards.append(rank + suit)
+if st.button("勝率を計算"):
+    try:
+        board = parse_card_input(board_input)
+        hero = parse_card_input(player1_hand)
+        villain = parse_card_input(player2_hand) if player2_hand else []
+        used_cards = hero + board + villain
+        deck = remove_known_cards(generate_deck(), used_cards)
 
-# --- モンテカルロ試行回数選択 ---
-st.subheader("モンテカルロ試行回数")
-num_simulations = st.selectbox("回数を選択", [100000, 200000, 300000, 400000, 500000,
-                                           600000, 700000, 800000, 900000, 1000000], index=0)
+        win, lose, tie = run_monte_carlo_simulation(hero, board, villain, deck, selected_range, simulations)
 
-# --- 勝率計算ボタン ---
-if st.button("勝率計算を実行"):
-    all_selected = player_hand + board_cards
-    if len(set(all_selected)) != len(all_selected):
-        st.error("同じカードが複数選ばれています。")
-    else:
-        st.write("計算中...")
-        # モード分岐：フロップ以降は数え上げ、それ以前はモンテカルロ
-        if len(board_cards) >= 3:
-            result = calculate_winrate_enumeration(player_hand, selected_range, board_cards)
-        else:
-            result = calculate_winrate_montecarlo(player_hand, selected_range, board_cards, num_simulations)
-        st.success("計算完了！")
-        st.write(result)
+        total = win + lose + tie
+        st.success(f"プレイヤー1の勝率: {win / total:.2%}")
+        st.info(f"引き分け率: {tie / total:.2%}")
+        st.error(f"敗北率: {lose / total:.2%}")
+    except Exception as e:
+        st.error(f"エラーが発生しました: {e}")
