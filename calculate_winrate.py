@@ -1,7 +1,7 @@
 import random
 from collections import Counter
 from itertools import combinations
-from utils import evaluate_hand, generate_possible_hands
+from utils import evaluate_hand, generate_possible_hands, generate_deck, remove_known_cards
 
 
 def run_monte_carlo_simulation(hero, board, villain, deck, selected_range, simulations):
@@ -11,13 +11,11 @@ def run_monte_carlo_simulation(hero, board, villain, deck, selected_range, simul
         temp_deck = deck.copy()
         random.shuffle(temp_deck)
 
-        # 補完するボード
         board_complete = board.copy()
         while len(board_complete) < 5:
             card = temp_deck.pop()
             board_complete.append(card)
 
-        # 相手ハンド選出
         if selected_range:
             possible_villains = generate_possible_hands(temp_deck, selected_range, board_complete, hero)
             if not possible_villains:
@@ -45,12 +43,10 @@ def run_enumeration_simulation(hero, board, villain, deck, selected_range):
     win = tie = lose = 0
     num_needed = 5 - len(board)
 
-    # 残りのボードの全パターン
     for extra_cards in combinations(deck, num_needed):
         full_board = board + list(extra_cards)
         temp_deck = [c for c in deck if c not in extra_cards]
 
-        # 相手ハンドすべて列挙
         if selected_range:
             villain_hands = generate_possible_hands(temp_deck, selected_range, full_board, hero)
         elif villain:
@@ -72,10 +68,6 @@ def run_enumeration_simulation(hero, board, villain, deck, selected_range):
 
 
 def simulate_winrate_shift(hero, opponent_range, board, stage):
-    """
-    次に来るカードごとに、勝率がどう変わるかを計算
-    """
-    from utils import generate_deck, remove_known_cards
     shift_result = {}
     deck = generate_deck()
     known = hero + board
