@@ -1,4 +1,2 @@
 streamlit
-treys
 numpy
-eval7
