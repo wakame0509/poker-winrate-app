@@ -1,61 +1,91 @@
 import random
 from collections import Counter
-import numpy as np
-from .utils import evaluate_hand, create_deck, remove_cards_from_deck
+from itertools import combinations
+from utils import evaluate_hand, generate_possible_hands
 
 
-def monte_carlo_winrate(player_hand, opponent_range, community_cards, iterations=100000):
-    wins, ties = 0, 0
-    player_hand = list(player_hand)
-    community_cards = list(community_cards)
+def run_monte_carlo_simulation(hero, board, villain, deck, selected_range, simulations):
+    win = tie = lose = 0
 
-    deck = create_deck()
-    used_cards = player_hand + community_cards
-    deck = remove_cards_from_deck(deck, used_cards)
+    for _ in range(simulations):
+        temp_deck = deck.copy()
+        random.shuffle(temp_deck)
 
-    for _ in range(iterations):
-        # ランダムな相手ハンドを opponent_range から選択
-        opp_hand = random.choice(opponent_range)
-        # 山札から相手のハンドが引けるかチェック
-        if any(card not in deck for card in opp_hand):
-            continue
-        remaining_deck = [c for c in deck if c not in opp_hand]
+        # 補完するボード
+        board_complete = board.copy()
+        while len(board_complete) < 5:
+            card = temp_deck.pop()
+            board_complete.append(card)
 
-        # 必要なコミュニティカードの数を補完
-        needed = 5 - len(community_cards)
-        board = community_cards + random.sample(remaining_deck, needed)
+        # 相手ハンド選出
+        if selected_range:
+            possible_villains = generate_possible_hands(temp_deck, selected_range, board_complete, hero)
+            if not possible_villains:
+                continue
+            villain_hand = random.choice(possible_villains)
+        elif villain:
+            villain_hand = villain
+        else:
+            villain_hand = [temp_deck.pop(), temp_deck.pop()]
 
-        # 評価
-        p_score = evaluate_hand(player_hand + board)
-        o_score = evaluate_hand(list(opp_hand) + board)
+        hero_score = evaluate_hand(hero + board_complete)
+        villain_score = evaluate_hand(villain_hand + board_complete)
 
-        if p_score > o_score:
-            wins += 1
-        elif p_score == o_score:
-            ties += 1
+        if hero_score > villain_score:
+            win += 1
+        elif hero_score == villain_score:
+            tie += 1
+        else:
+            lose += 1
 
-    total = iterations
-    losses = total - wins - ties
-    return {
-        "Win": round(wins / total * 100, 2),
-        "Tie": round(ties / total * 100, 2),
-        "Lose": round(losses / total * 100, 2),
-    }
+    return win, lose, tie
 
 
-def simulate_winrate_shift(player_hand, opponent_range, community_cards, stage):
-    results = {}
-    full_deck = create_deck()
-    used = player_hand + community_cards
-    deck = remove_cards_from_deck(full_deck, used)
+def run_enumeration_simulation(hero, board, villain, deck, selected_range):
+    win = tie = lose = 0
+    num_needed = 5 - len(board)
+
+    # 残りのボードの全パターン
+    for extra_cards in combinations(deck, num_needed):
+        full_board = board + list(extra_cards)
+        temp_deck = [c for c in deck if c not in extra_cards]
+
+        # 相手ハンドすべて列挙
+        if selected_range:
+            villain_hands = generate_possible_hands(temp_deck, selected_range, full_board, hero)
+        elif villain:
+            villain_hands = [villain]
+        else:
+            villain_hands = list(combinations(temp_deck, 2))
+
+        for villain_hand in villain_hands:
+            hero_score = evaluate_hand(hero + full_board)
+            villain_score = evaluate_hand(list(villain_hand) + full_board)
+            if hero_score > villain_score:
+                win += 1
+            elif hero_score == villain_score:
+                tie += 1
+            else:
+                lose += 1
+
+    return win, lose, tie
+
+
+def simulate_winrate_shift(hero, opponent_range, board, stage):
+    """
+    次に来るカードごとに、勝率がどう変わるかを計算
+    """
+    from utils import generate_deck, remove_known_cards
+    shift_result = {}
+    deck = generate_deck()
+    known = hero + board
+    deck = remove_known_cards(deck, known)
 
     for card in deck:
-        next_community = community_cards + [card]
-        if stage == "flop" and len(next_community) == 4:
-            simulated = monte_carlo_winrate(player_hand, opponent_range, next_community, iterations=10000)
-            results[card] = simulated["Win"]
-        elif stage == "turn" and len(next_community) == 5:
-            simulated = monte_carlo_winrate(player_hand, opponent_range, next_community, iterations=10000)
-            results[card] = simulated["Win"]
+        next_board = board + [card]
+        win, lose, tie = run_monte_carlo_simulation(hero, next_board, [], remove_known_cards(deck, [card]), opponent_range, 5000)
+        total = win + tie + lose
+        shift_result[card] = round(win / total * 100, 1)
 
-    return dict(sorted(results.items(), key=lambda x: x[1], reverse=True))
+    sorted_result = dict(sorted(shift_result.items(), key=lambda x: x[1], reverse=True))
+    return sorted_result
