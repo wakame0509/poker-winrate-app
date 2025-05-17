@@ -85,3 +85,21 @@ def simulate_winrate_shift(p1_card1, p1_card2, board, selected_range):
 
     df = pd.DataFrame(results).sort_values(by='Winrate', ascending=False)
     return df
+
+def simulate_winrate_shift_montecarlo(p1_card1, p1_card2, board, selected_range, num_simulations=10000):
+    results = []
+    deck = generate_deck()
+    known_cards = [p1_card1, p1_card2] + board
+    deck = remove_known_cards(deck, known_cards)
+
+    for card in deck:
+        hypothetical_board = board + [card]
+
+        if len(hypothetical_board) > 5:
+            continue
+
+        winrate = run_monte_carlo_simulation(p1_card1, p1_card2, hypothetical_board, selected_range, num_simulations)
+        results.append({'Card': card, 'Winrate': winrate})
+
+    df = pd.DataFrame(results).sort_values(by='Winrate', ascending=False)
+    return df
