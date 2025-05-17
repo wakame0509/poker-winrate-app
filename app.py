@@ -1,57 +1,47 @@
 import streamlit as st
 from calculate_winrate import run_monte_carlo_simulation, run_enumeration_simulation, simulate_winrate_shift
 from hand_range_matrix import display_hand_range_selector
-from utils import parse_card_input, generate_deck, remove_known_cards
+from utils import parse_card_input, is_mobile
 
-st.set_page_config(page_title="テキサスホールデム勝率計算ツール", layout="wide")
-st.title("テキサスホールデム勝率計算ツール")
+st.set_page_config(page_title="Poker Winrate Calculator v1.3")
 
-st.sidebar.header("設定")
-simulations = st.sidebar.selectbox(
-    "モンテカルロ法の試行回数",
-    options=[100000, 200000, 300000, 400000, 500000, 600000, 700000, 800000, 900000, 1000000],
-    index=0
-)
+st.title("Poker Winrate Calculator v1.3")
 
-st.subheader("プレイヤーのハンド")
-col1, col2 = st.columns(2)
-with col1:
-    player1_hand = st.text_input("プレイヤー1", value="As Kh")
-with col2:
-    player2_hand = st.text_input("プレイヤー2（未指定でランダム）", value="")
+st.markdown("### プレイヤー1のハンドを選択")
+cols = st.columns(2)
+player1_card1 = cols[0].selectbox("カード1", options=parse_card_input(), key="p1_card1")
+player1_card2 = cols[1].selectbox("カード2", options=parse_card_input(), key="p1_card2")
 
-st.subheader("ボード")
-board_input = st.text_input("フロップ・ターン・リバー", value="")
+st.markdown("### コミュニティカード（任意）")
+board_cols = st.columns(5)
+board_cards = []
+for i in range(5):
+    card = board_cols[i].selectbox(f"カード{i+1}", options=[""] + parse_card_input(), key=f"board_card_{i}")
+    if card:
+        board_cards.append(card)
 
-st.subheader("相手のハンドレンジを指定（任意）")
+st.markdown("### モンテカルロ法 試行回数選択")
+tries_options = [10_000, 100_000, 200_000, 300_000, 400_000, 500_000, 600_000, 700_000, 800_000, 900_000, 1_000_000]
+default_index = tries_options.index(100_000)
+num_simulations = st.selectbox("試行回数", tries_options, index=default_index)
+
+if is_mobile():
+    st.warning("モバイル端末でのアクセスを検出しました。軽量モードを推奨します。")
+
+st.markdown("### プレイヤー2のハンドレンジを選択")
 selected_range = display_hand_range_selector()
 
-show_shift = st.checkbox("次のカードごとの勝率変動を表示")
-
 if st.button("勝率を計算"):
-    try:
-        board = parse_card_input(board_input)
-        hero = parse_card_input(player1_hand)
-        villain = parse_card_input(player2_hand) if player2_hand else []
-        used_cards = hero + board + villain
-        deck = remove_known_cards(generate_deck(), used_cards)
+    if len(board_cards) < 3:
+        st.info("プリフロップ or ポストフロップ段階：モンテカルロ法を使用します。")
+        winrate = run_monte_carlo_simulation(player1_card1, player1_card2, board_cards, selected_range, num_simulations)
+    else:
+        st.info("フロップ以降：数え上げ法で計算します。")
+        winrate = run_enumeration_simulation(player1_card1, player1_card2, board_cards, selected_range)
 
-        # 使用する計算方法の選定（フロップ以降は数え上げ）
-        if len(board) >= 3:
-            win, lose, tie = run_enumeration_simulation(hero, board, villain, deck, selected_range)
-        else:
-            win, lose, tie = run_monte_carlo_simulation(hero, board, villain, deck, selected_range, simulations)
+    st.success(f"プレイヤー1の勝率：{winrate:.2f}%")
 
-        total = win + lose + tie
-        st.success(f"プレイヤー1の勝率: {win / total:.2%}")
-        st.info(f"引き分け率: {tie / total:.2%}")
-        st.error(f"敗北率: {lose / total:.2%}")
-
-        if show_shift and len(board) in [3, 4]:
-            stage = "turn" if len(board) == 3 else "river"
-            st.subheader(f"次の{stage.upper()}カードによる勝率変動")
-            shift = simulate_winrate_shift(hero, selected_range, board, stage)
-            st.dataframe(shift)
-
-    except Exception as e:
-        st.error(f"エラーが発生しました: {e}")
+    if len(board_cards) in [3, 4]:
+        st.markdown("### 次に来るカードごとの勝率変動")
+        shift_df = simulate_winrate_shift(player1_card1, player1_card2, board_cards, selected_range)
+        st.dataframe(shift_df)
