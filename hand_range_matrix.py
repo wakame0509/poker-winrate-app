@@ -1,37 +1,66 @@
 import streamlit as st
+from utils import is_mobile
 
 def display_hand_range_selector():
-    """
-    13x13マトリクス形式でハンドレンジを選択するUI
-    出力は ['AKs', 'QJo', 'AA', ...] 形式のリスト
-    """
-    st.markdown("### プレイヤー2のハンドレンジを選択 (13x13マトリクス)")
+    st.markdown("### プレイヤー2のハンドレンジを選択 (13x13マトリクス・横スクロール対応)")
 
     ranks = 'A K Q J T 9 8 7 6 5 4 3 2'.split()
     selected_hands = []
 
-    cols = st.columns(14)  # 左端のランク用1列＋13列
+    st.markdown(
+        """
+        <style>
+        .hand-matrix {
+            overflow-x: auto;
+            white-space: nowrap;
+        }
+        .hand-matrix table {
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .hand-matrix th, .hand-matrix td {
+            border: 1px solid #ccc;
+            text-align: center;
+            padding: 4px;
+            min-width: 30px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
 
-    # 最上段にランク見出し
-    cols[0].markdown("**&nbsp;**")  # 左上空白
-    for i, r in enumerate(ranks):
-        cols[i + 1].markdown(f"**{r}**")
+    st.markdown('<div class="hand-matrix"><table>', unsafe_allow_html=True)
 
-    # マトリクス本体
+    # ヘッダー行
+    header_html = "<tr><th></th>"
+    for r in ranks:
+        header_html += f"<th>{r}</th>"
+    header_html += "</tr>"
+    st.markdown(header_html, unsafe_allow_html=True)
+
+    # 本体マトリクス
     for i, r1 in enumerate(ranks):
-        row_cols = st.columns(14)
-        row_cols[0].markdown(f"**{r1}**")  # 左端に行ラベル
-
+        row_html = f"<tr><th>{r1}</th>"
         for j, r2 in enumerate(ranks):
             if i < j:
-                label = f"{r1}{r2}s"  # スーテッド
+                label = f"{r1}{r2}s"
             elif i > j:
-                label = f"{r2}{r1}o"  # オフスート
+                label = f"{r2}{r1}o"
             else:
-                label = f"{r1}{r2}"   # ペア
+                label = f"{r1}{r1}"
 
-            checked = row_cols[j + 1].checkbox("", key=f"{label}")
-            if checked:
-                selected_hands.append(label)
+            # チェックボックスをHTMLで表示
+            checkbox_key = f"hand_{label}"
+            checked = st.session_state.get(checkbox_key, False)
+            input_html = f'<input type="checkbox" name="{checkbox_key}" {"checked" if checked else ""} onclick="window.parent.postMessage({{\'checkbox\':\'{checkbox_key}\',\'checked\':this.checked}}, \'*\')">'
+            row_html += f"<td>{input_html}</td>"
+
+        row_html += "</tr>"
+        st.markdown(row_html, unsafe_allow_html=True)
+
+    st.markdown('</table></div>', unsafe_allow_html=True)
+
+    # チェックボックスの状態をsession_stateに反映（裏で拾う仕組み）
+    selected_hands = [key.split('_')[1] for key, val in st.session_state.items() if key.startswith('hand_') and val]
 
     return selected_hands
