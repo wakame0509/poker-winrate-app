@@ -1,59 +1,37 @@
 import streamlit as st
 
-RANKS = ['A', 'K', 'Q', 'J', 'T', '9', '8', '7', '6', '5', '4', '3', '2']
-SUITS = ['c', 'd', 'h', 's']
-
-def get_hand_label(i, j):
-    if i == j:
-        return f"{RANKS[i]}{RANKS[j]}"
-    elif i < j:
-        return f"{RANKS[i]}{RANKS[j]}s"
-    else:
-        return f"{RANKS[j]}{RANKS[i]}o"
-
-def generate_suited_combinations(rank1, rank2):
-    return [f"{rank1}{suit}{rank2}{suit}" for suit in SUITS]
-
-def generate_offsuited_combinations(rank1, rank2):
-    combos = []
-    for suit1 in SUITS:
-        for suit2 in SUITS:
-            if suit1 != suit2:
-                combos.append(f"{rank1}{suit1}{rank2}{suit2}")
-    return combos
-
-def generate_pair_combinations(rank):
-    combos = []
-    for i in range(len(SUITS)):
-        for j in range(i + 1, len(SUITS)):
-            combos.append(f"{rank}{SUITS[i]}{rank}{SUITS[j]}")
-    return combos
-
 def display_hand_range_selector():
-    st.markdown("#### プレイヤー2のハンドレンジを選択")
+    """
+    13x13マトリクス形式でハンドレンジを選択するUI
+    出力は ['AKs', 'QJo', 'AA', ...] 形式のリスト
+    """
+    st.markdown("### プレイヤー2のハンドレンジを選択 (13x13マトリクス)")
+
+    ranks = 'A K Q J T 9 8 7 6 5 4 3 2'.split()
     selected_hands = []
 
-    grid_cols = st.columns(13)
-    for i in range(13):
-        with grid_cols[i]:
-            for j in range(13):
-                label = get_hand_label(i, j)
-                if st.checkbox(label, key=f"hand_{i}_{j}"):
-                    if 's' in label:
-                        rank1, rank2 = label[0], label[1]
-                        combos = generate_suited_combinations(rank1, rank2)
-                        for combo in combos:
-                            selected_hands.append([combo[:2], combo[2:]])
-                    elif 'o' in label:
-                        rank1, rank2 = label[0], label[1]
-                        combos = generate_offsuited_combinations(rank1, rank2)
-                        for combo in combos:
-                            selected_hands.append([combo[:2], combo[2:]])
-                    else:
-                        # ポケットペア
-                        rank = label[0]
-                        combos = generate_pair_combinations(rank)
-                        for combo in combos:
-                            selected_hands.append([combo[:2], combo[2:]])
+    cols = st.columns(14)  # 左端のランク用1列＋13列
+
+    # 最上段にランク見出し
+    cols[0].markdown("**&nbsp;**")  # 左上空白
+    for i, r in enumerate(ranks):
+        cols[i + 1].markdown(f"**{r}**")
+
+    # マトリクス本体
+    for i, r1 in enumerate(ranks):
+        row_cols = st.columns(14)
+        row_cols[0].markdown(f"**{r1}**")  # 左端に行ラベル
+
+        for j, r2 in enumerate(ranks):
+            if i < j:
+                label = f"{r1}{r2}s"  # スーテッド
+            elif i > j:
+                label = f"{r2}{r1}o"  # オフスート
+            else:
+                label = f"{r1}{r2}"   # ペア
+
+            checked = row_cols[j + 1].checkbox("", key=f"{label}")
+            if checked:
+                selected_hands.append(label)
 
     return selected_hands
