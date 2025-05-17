@@ -1,65 +1,38 @@
-from itertools import combinations
-import random
-
-SUITS = ['s', 'h', 'd', 'c']
-RANKS = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
-
-def generate_deck():
-    return [r + s for r in RANKS for s in SUITS]
-
-def remove_known_cards(deck, known):
-    return [card for card in deck if card not in known]
-
-def parse_card_input(card_str):
-    return [c.strip() for c in card_str.split() if len(c.strip()) == 2]
+import eval7
 
 def evaluate_hand(cards):
-    """
-    与えられた7枚のカードから最強の5枚を評価し、数値スコアを返す。
-    簡易スコアリング：大きいほど強い。
-    """
-    best_score = 0
-    for combo in combinations(cards, 5):
-        score = score_hand(combo)
-        if score > best_score:
-            best_score = score
-    return best_score
+    hand_value = eval7.evaluate(cards)
+    return hand_value
 
-def score_hand(hand):
-    """簡易ハンド評価ロジック"""
-    ranks = [card[0] for card in hand]
-    suits = [card[1] for card in hand]
-    rank_counts = {r: ranks.count(r) for r in set(ranks)}
-    values = sorted([RANKS.index(r) for r in ranks], reverse=True)
+def generate_deck():
+    ranks = '23456789TJQKA'
+    suits = 'cdhs'
+    return [r + s for r in ranks for s in suits]
 
-    is_flush = len(set(suits)) == 1
-    is_straight = len(set(values)) == 5 and max(values) - min(values) == 4
+def remove_known_cards(deck, known_cards):
+    return [card for card in deck if card not in known_cards]
 
-    if is_flush and is_straight:
-        return 900 + max(values)
-    elif 4 in rank_counts.values():
-        return 800 + max(values)
-    elif sorted(rank_counts.values()) == [2, 3]:
-        return 700 + max(values)
-    elif is_flush:
-        return 600 + max(values)
-    elif is_straight:
-        return 500 + max(values)
-    elif 3 in rank_counts.values():
-        return 400 + max(values)
-    elif list(rank_counts.values()).count(2) == 2:
-        return 300 + max(values)
-    elif 2 in rank_counts.values():
-        return 200 + max(values)
-    else:
-        return 100 + max(values)
-
-def generate_possible_hands(deck, range_labels, board, hero):
-    # 簡易版: すべての2枚組み合わせを返す
-    combos = []
+def generate_possible_hands(deck, board_needed=2):
+    possible_hands = []
     for i in range(len(deck)):
         for j in range(i + 1, len(deck)):
-            h1, h2 = deck[i], deck[j]
-            if h1 not in hero and h2 not in hero and h1 not in board and h2 not in board:
-                combos.append([h1, h2])
-    return combos
+            if board_needed == 2:
+                possible_hands.append([deck[i], deck[j]])
+            elif board_needed == 1:
+                possible_hands.append([deck[i]])
+            elif board_needed == 3:
+                for k in range(j + 1, len(deck)):
+                    possible_hands.append([deck[i], deck[j], deck[k]])
+    return possible_hands
+
+def parse_card_input():
+    ranks = '2 3 4 5 6 7 8 9 T J Q K A'.split()
+    suits = 'c d h s'.split()
+    return [r + s for r in ranks for s in suits]
+
+def is_mobile():
+    import streamlit as st
+    user_agent = st.get_option('browser.userAgent')
+    if user_agent and ('Mobile' in user_agent or 'Android' in user_agent or 'iPhone' in user_agent):
+        return True
+    return False
