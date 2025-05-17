@@ -1,83 +1,87 @@
 import random
-from collections import Counter
-from itertools import combinations
+import pandas as pd
+import eval7
 from utils import evaluate_hand, generate_possible_hands, generate_deck, remove_known_cards
 
+def run_monte_carlo_simulation(p1_card1, p1_card2, board, selected_range, num_simulations):
+    wins = 0
+    ties = 0
 
-def run_monte_carlo_simulation(hero, board, villain, deck, selected_range, simulations):
-    win = tie = lose = 0
-
-    for _ in range(simulations):
-        temp_deck = deck.copy()
-        random.shuffle(temp_deck)
-
-        board_complete = board.copy()
-        while len(board_complete) < 5:
-            card = temp_deck.pop()
-            board_complete.append(card)
-
-        if selected_range:
-            possible_villains = generate_possible_hands(temp_deck, selected_range, board_complete, hero)
-            if not possible_villains:
-                continue
-            villain_hand = random.choice(possible_villains)
-        elif villain:
-            villain_hand = villain
-        else:
-            villain_hand = [temp_deck.pop(), temp_deck.pop()]
-
-        hero_score = evaluate_hand(hero + board_complete)
-        villain_score = evaluate_hand(villain_hand + board_complete)
-
-        if hero_score > villain_score:
-            win += 1
-        elif hero_score == villain_score:
-            tie += 1
-        else:
-            lose += 1
-
-    return win, lose, tie
-
-
-def run_enumeration_simulation(hero, board, villain, deck, selected_range):
-    win = tie = lose = 0
-    num_needed = 5 - len(board)
-
-    for extra_cards in combinations(deck, num_needed):
-        full_board = board + list(extra_cards)
-        temp_deck = [c for c in deck if c not in extra_cards]
-
-        if selected_range:
-            villain_hands = generate_possible_hands(temp_deck, selected_range, full_board, hero)
-        elif villain:
-            villain_hands = [villain]
-        else:
-            villain_hands = list(combinations(temp_deck, 2))
-
-        for villain_hand in villain_hands:
-            hero_score = evaluate_hand(hero + full_board)
-            villain_score = evaluate_hand(list(villain_hand) + full_board)
-            if hero_score > villain_score:
-                win += 1
-            elif hero_score == villain_score:
-                tie += 1
-            else:
-                lose += 1
-
-    return win, lose, tie
-
-
-def simulate_winrate_shift(hero, opponent_range, board, stage):
-    shift_result = {}
     deck = generate_deck()
-    known = hero + board
-    deck = remove_known_cards(deck, known)
+    known_cards = [p1_card1, p1_card2] + board
+    deck = remove_known_cards(deck, known_cards)
+
+    for _ in range(num_simulations):
+        sim_deck = deck.copy()
+        random.shuffle(sim_deck)
+
+        opp_hand = random.sample(selected_range, 1)[0] if selected_range else [sim_deck.pop(), sim_deck.pop()]
+
+        remaining_board = board + [sim_deck.pop() for _ in range(5 - len(board))]
+
+        p1_hand = [eval7.Card(p1_card1), eval7.Card(p1_card2)] + [eval7.Card(c) for c in remaining_board]
+        p2_hand = [eval7.Card(opp_hand[0]), eval7.Card(opp_hand[1])] + [eval7.Card(c) for c in remaining_board]
+
+        p1_score = evaluate_hand(p1_hand)
+        p2_score = evaluate_hand(p2_hand)
+
+        if p1_score > p2_score:
+            wins += 1
+        elif p1_score == p2_score:
+            ties += 1
+
+    winrate = (wins + ties / 2) / num_simulations * 100
+    return winrate
+
+def run_enumeration_simulation(p1_card1, p1_card2, board, selected_range):
+    wins = 0
+    ties = 0
+    total = 0
+
+    deck = generate_deck()
+    known_cards = [p1_card1, p1_card2] + board
+    deck = remove_known_cards(deck, known_cards)
+
+    possible_opponent_hands = generate_possible_hands(deck)
+    possible_boards = generate_possible_hands(deck, board_needed=(5 - len(board)))
+
+    for opp_hand in possible_opponent_hands:
+        if selected_range and opp_hand not in selected_range:
+            continue
+
+        for remaining_cards in possible_boards:
+            full_board = board + remaining_cards
+
+            p1_hand = [eval7.Card(p1_card1), eval7.Card(p1_card2)] + [eval7.Card(c) for c in full_board]
+            p2_hand = [eval7.Card(opp_hand[0]), eval7.Card(opp_hand[1])] + [eval7.Card(c) for c in full_board]
+
+            p1_score = evaluate_hand(p1_hand)
+            p2_score = evaluate_hand(p2_hand)
+
+            if p1_score > p2_score:
+                wins += 1
+            elif p1_score == p2_score:
+                ties += 1
+
+            total += 1
+
+    winrate = (wins + ties / 2) / total * 100 if total > 0 else 0
+    return winrate
+
+def simulate_winrate_shift(p1_card1, p1_card2, board, selected_range):
+    results = []
+    deck = generate_deck()
+    known_cards = [p1_card1, p1_card2] + board
+    deck = remove_known_cards(deck, known_cards)
 
     for card in deck:
-        next_board = board + [card]
-        win, lose, tie = run_monte_carlo_simulation(hero, next_board, [], remove_known_cards(deck, [card]), opponent_range, 5000)
-        total = win + tie + lose
-        shift_result[card] = round(win / total * 100, 1)
+        hypothetical_board = board + [card]
 
-    sorted_result = dict(sorted(shift_result.items(), key=lambda x: x[1], reverse=True))
-    return sorted_result
+        if len(hypothetical_board) > 5:
+            continue
+
+        winrate = run_enumeration_simulation(p1_card1, p1_card2, hypothetical_board, selected_range)
+        results.append({'Card': card, 'Winrate': winrate})
+
+    df = pd.DataFrame(results).sort_values(by='Winrate', ascending=False)
+    return df
