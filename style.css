@@ -1,32 +1,35 @@
-/* style.css */
-
+/* 全体のフォントと余白 */
 body {
-    background-color: #f8f9fa;
-    color: #212529;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: 'Arial', sans-serif;
+    margin: 0;
+    padding: 0;
 }
 
-h1, h2, h3 {
-    color: #343a40;
+/* ハンドレンジマトリクス用の調整 */
+.stCheckbox {
+    margin: 2px 2px;
+    font-size: 12px;
 }
 
-.stButton > button {
-    background-color: #007bff;
-    color: white;
-    border: none;
-    border-radius: 5px;
-    padding: 0.5em 1em;
+/* 勝率変動テーブルの見やすさ強化 */
+thead tr th {
+    background-color: #f0f0f0;
+    font-weight: bold;
 }
 
-.stButton > button:hover {
-    background-color: #0056b3;
+tbody tr:nth-child(even) {
+    background-color: #f9f9f9;
 }
 
-.card-select {
-    max-width: 100%;
-    height: auto;
-    cursor: pointer;
-    margin: 3px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
+tbody tr:hover {
+    background-color: #e0e0e0;
+}
+
+/* 成績の色分け用（例） */
+.winrate-high {
+    background-color: #d4edda;
+}
+
+.winrate-low {
+    background-color: #f8d7da;
 }
