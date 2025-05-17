@@ -1,4 +1,5 @@
 import eval7
+import streamlit as st
 
 def evaluate_hand(cards):
     hand_value = eval7.evaluate(cards)
@@ -31,8 +32,9 @@ def parse_card_input():
     return [r + s for r in ranks for s in suits]
 
 def is_mobile():
-    import streamlit as st
-    user_agent = st.get_option('browser.userAgent')
-    if user_agent and ('Mobile' in user_agent or 'Android' in user_agent or 'iPhone' in user_agent):
-        return True
+    ctx = st.runtime.scriptrunner.get_script_run_context()
+    if ctx and ctx.user_info and ctx.user_info.browser:
+        user_agent = ctx.user_info.browser
+        if 'Mobile' in user_agent or 'Android' in user_agent or 'iPhone' in user_agent:
+            return True
     return False
